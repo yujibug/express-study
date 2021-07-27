@@ -2,134 +2,23 @@ const express = require('express');
 const app = express(); //express 함수의 리턴값을 app에 할당
 const port = 3000;
 const fs = require('fs');
-const template = require('./lib/template.js');
-const qs = require('querystring');
-const sanitizeHtml = require('sanitize-html');
 const compression = require('compression');
+const indexRouter = require('./routes/index');
+const topicRouter = require('./routes/topic');
 
+app.use(express.static('public')); //정적인 파일을 서비스하고자 하는 디렉토리를 지정
 app.use(express.urlencoded({ extended: false }));
 app.use(compression());
-
-//app.get 메소드는 routing 역할을 함 (패스마다 어떤 적절한 응답을 할지)
-app.get('/', (req, res) => {
+app.get('*', (req, res, next) => {
   fs.readdir('./data', function (error, filelist) {
-    var title = 'Welcome';
-    var description = 'Hello, Node.js';
-    var list = template.list(filelist);
-    var html = template.HTML(
-      title,
-      list,
-      `<h2>${title}</h2>${description}`,
-      `<a href="/create">create</a>`
-    );
-    res.send(html);
+    req.list = filelist;
+    next(); //next()를 씀으로써 그 다음 미들웨어를 호출할지를 이전 미들웨어에서 결정
   });
 });
 
-app.get('/page/:pageId', (req, res) => {
-  fs.readdir('./data', function (error, filelist) {
-    var filteredId = req.params.pageId;
-    fs.readFile(`data/${filteredId}`, 'utf8', function (err, description) {
-      var title = req.params.pageId;
-      var sanitizedTitle = sanitizeHtml(title);
-      var sanitizedDescription = sanitizeHtml(description, {
-        allowedTags: ['h1'],
-      });
-      var list = template.list(filelist);
-      var html = template.HTML(
-        sanitizedTitle,
-        list,
-        `<h2>${sanitizedTitle}</h2>${sanitizedDescription}`,
-        ` <a href="/create">create</a>
-              <a href="/update/${sanitizedTitle}">update</a>
-              <form action="/delete_process/${sanitizedTitle}" method="post">
-                <input type="submit" value="delete">
-              </form>`
-      );
-      res.send(html);
-    });
-  });
-});
-
-app.get('/create', (req, res) => {
-  fs.readdir('./data', function (error, filelist) {
-    var title = 'WEB - create';
-    var list = template.list(filelist);
-    var html = template.HTML(
-      title,
-      list,
-      `
-          <form action="/create_process" method="post">
-            <p><input type="text" name="title" placeholder="title"></p>
-            <p>
-              <textarea name="description" placeholder="description"></textarea>
-            </p>
-            <p>
-              <input type="submit">
-            </p>
-          </form>
-        `,
-      ''
-    );
-    res.send(html);
-  });
-});
-
-app.post('/create_process', (req, res) => {
-  var post = req.body;
-  var title = post.title;
-  var description = post.description;
-  fs.writeFile(`data/${title}`, description, 'utf8', function (err) {
-    res.redirect(`/page/${title}`);
-  });
-});
-
-app.get('/update/:pageId', (req, res) => {
-  fs.readdir('./data', function (error, filelist) {
-    var filteredId = req.params.pageId;
-    fs.readFile(`data/${filteredId}`, 'utf8', function (err, description) {
-      var title = req.params.pageId;
-      var list = template.list(filelist);
-      var html = template.HTML(
-        title,
-        list,
-        `
-            <form action="/update_process" method="post">
-              <input type="hidden" name="id" value="${title}">
-              <p><input type="text" name="title" placeholder="title" value="${title}"></p>
-              <p>
-                <textarea name="description" placeholder="description">${description}</textarea>
-              </p>
-              <p>
-                <input type="submit">
-              </p>
-            </form>
-            `,
-        `<a href="/create">create</a> <a href="/update/${title}">update</a>`
-      );
-      res.send(html);
-    });
-  });
-});
-
-app.post('/update_process', (req, res) => {
-  var post = req.body;
-  var id = post.id;
-  var title = post.title;
-  var description = post.description;
-  fs.rename(`data/${id}`, `data/${title}`, function (error) {
-    fs.writeFile(`data/${title}`, description, 'utf8', function (err) {
-      res.redirect(`/page/${title}`);
-    });
-  });
-});
-
-app.post('/delete_process/:pageId', (req, res) => {
-  var filteredId = req.params.pageId;
-  fs.unlink(`data/${filteredId}`, function (error) {
-    res.redirect(`/`);
-  });
-});
+app.use('/', indexRouter);
+app.use('/topic', topicRouter);
+//topic으로 시작하는 주소들에게 topicRouter 미들웨어를 적용하겠다
 
 app.get('/dopil', (req, res) => {
   const html = `<!DOCTYPE html>
@@ -148,6 +37,15 @@ app.get('/dopil', (req, res) => {
 </body>
 </html>`;
   res.send(html);
+});
+
+app.use(function (req, res, next) {
+  res.status(404).send('Sorry cant find that!');
+});
+
+app.use(function (err, req, res, next) {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
 });
 
 app.listen(port, () => {
